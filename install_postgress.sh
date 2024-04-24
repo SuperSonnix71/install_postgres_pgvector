@@ -16,7 +16,6 @@ install_postgresql() {
     sudo systemctl start postgresql || { echo "Failed to start PostgreSQL"; exit 1; }
     sudo systemctl enable postgresql || { echo "Failed to enable PostgreSQL"; exit 1; }
 
-   
     echo -e "\033[35mEnter the username for the PostgreSQL superuser:\033[0m"
     read username
     echo -e "\033[35mEnter the password for the PostgreSQL superuser:\033[0m"
