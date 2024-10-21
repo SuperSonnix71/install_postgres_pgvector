@@ -17,15 +17,15 @@ add_postgresql_repository() {
     sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list' || { echo "Failed to add PostgreSQL repository"; exit 1; }
 
     # Update package list
-    sudo apt-get update || { echo "Failed to update package lists after adding PostgreSQL repository"; exit 1; }
+    sudo apt update || { echo "Failed to update package lists after adding PostgreSQL repository"; exit 1; }
 
     echo "PostgreSQL repository added successfully."
 }
 
 install_postgresql() {
     echo "Installing PostgreSQL..."
-    sudo apt-get update || { echo "Failed to update packages list"; exit 1; }
-    sudo apt-get install -y postgresql postgresql-contrib || { echo "Failed to install PostgreSQL"; exit 1; }
+    sudo apt update || { echo "Failed to update packages list"; exit 1; }
+    sudo apt install -y postgresql postgresql-contrib || { echo "Failed to install PostgreSQL"; exit 1; }
 
     sudo systemctl start postgresql || { echo "Failed to start PostgreSQL"; exit 1; }
     sudo systemctl enable postgresql || { echo "Failed to enable PostgreSQL"; exit 1; }
@@ -77,8 +77,16 @@ install_postgresql() {
 install_pgvector() {
     echo "Installing pgvector..."
 
-    # Install the latest version of pgvector based on the installed PostgreSQL version
-    sudo apt-get install -y postgresql-pgvector || { echo "Failed to install pgvector"; exit 1; }
+    # Get the PostgreSQL version to install the correct pgvector package
+    pg_version=$(psql -V | awk '{print $3}' | cut -d. -f1)
+
+    # Determine the correct pgvector package based on PostgreSQL version
+    if [[ "$pg_version" == "12" || "$pg_version" == "13" || "$pg_version" == "14" || "$pg_version" == "15" || "$pg_version" == "16" || "$pg_version" == "17" ]]; then
+        sudo apt install -y "postgresql-$pg_version-pgvector" || { echo "Failed to install pgvector for PostgreSQL $pg_version"; exit 1; }
+    else
+        echo "Unsupported PostgreSQL version $pg_version. Unable to install pgvector."
+        exit 1
+    fi
 
     sudo systemctl restart postgresql || { echo "Failed to restart PostgreSQL after installing pgvector"; exit 1; }
 
@@ -92,8 +100,8 @@ install_pgvector() {
 uninstall_postgresql() {
     echo "Uninstalling PostgreSQL..."
     sudo systemctl stop postgresql || { echo "Failed to stop PostgreSQL"; exit 1; }
-    sudo apt-get purge -y postgresql postgresql-contrib postgresql-common || { echo "Failed to purge PostgreSQL packages"; exit 1; }
-    sudo apt-get autoremove -y || { echo "Failed to remove obsolete packages"; exit 1; }
+    sudo apt purge -y postgresql postgresql-contrib postgresql-common || { echo "Failed to purge PostgreSQL packages"; exit 1; }
+    sudo apt autoremove -y || { echo "Failed to remove obsolete packages"; exit 1; }
     echo "PostgreSQL has been removed."
 }
 
