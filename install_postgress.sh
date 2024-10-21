@@ -21,6 +21,24 @@ add_postgresql_repository() {
     echo "PostgreSQL repository added successfully."
 }
 
+configure_postgresql_conf() {
+    # Get the major version of PostgreSQL
+    pg_version=$(psql -V | awk '{print $3}' | cut -d. -f1)
+
+    # Adjust path based on PostgreSQL version
+    config_path="/etc/postgresql/$pg_version/main/postgresql.conf"
+
+    # Ensure listen_addresses is set to '*' to allow connections from any IP address
+    if [[ -f "$config_path" ]]; then
+        echo "Configuring listen_addresses in postgresql.conf to allow all IP addresses..."
+        sudo sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/g" "$config_path" || { echo "Failed to configure listen_addresses in postgresql.conf"; exit 1; }
+        echo "listen_addresses configured successfully in postgresql.conf."
+    else
+        echo "PostgreSQL configuration file not found at $config_path"
+        exit 1
+    fi
+}
+
 configure_pg_hba() {
     # Get the major version of PostgreSQL
     pg_version=$(psql -V | awk '{print $3}' | cut -d. -f1)
@@ -28,10 +46,20 @@ configure_pg_hba() {
     # Adjust path based on PostgreSQL version
     hba_path="/etc/postgresql/$pg_version/main/pg_hba.conf"
 
-    # Ensure md5 authentication is enabled
+    # Ensure md5 authentication is enabled and allow all IP connections
     if [[ -f "$hba_path" ]]; then
-        echo "Configuring pg_hba.conf to use password authentication (md5)..."
-        sudo sed -i "s/local   all             postgres                                peer/local   all             postgres                                md5/g" "$hba_path" || { echo "Failed to configure pg_hba.conf"; exit 1; }
+        echo "Configuring pg_hba.conf to allow connections from any IP with md5 authentication..."
+        sudo sed -i "s/local   all             postgres                                peer/local   all             postgres                                md5/g" "$hba_path" || { echo "Failed to configure pg_hba.conf for local connections"; exit 1; }
+
+        # Allow connections from all IP addresses (IPv4)
+        echo "host    all             all             0.0.0.0/0               md5" | sudo tee -a "$hba_path" || { echo "Failed to add entry for all IPv4 addresses"; exit 1; }
+
+        # Optional: Allow non-SSL connections from all IP addresses (remove this line if SSL is required)
+        echo "hostnossl    all             all             0.0.0.0/0               md5" | sudo tee -a "$hba_path" || { echo "Failed to add non-SSL entry"; exit 1; }
+
+        # Allow connections from all IPv6 addresses (optional)
+        echo "host    all             all             ::/0               md5" | sudo tee -a "$hba_path" || { echo "Failed to add entry for all IPv6 addresses"; exit 1; }
+
         echo "pg_hba.conf configured successfully."
     else
         echo "PostgreSQL configuration file not found at $hba_path"
@@ -58,7 +86,10 @@ install_postgresql() {
     sudo systemctl start postgresql || { echo "Failed to start PostgreSQL"; exit 1; }
     sudo systemctl enable postgresql || { echo "Failed to enable PostgreSQL"; exit 1; }
 
-    # Configure pg_hba.conf for md5 password authentication
+    # Configure postgresql.conf for all IP addresses
+    configure_postgresql_conf
+
+    # Configure pg_hba.conf for md5 password authentication and external connections
     configure_pg_hba
 
     # Set password for postgres user
