@@ -8,6 +8,20 @@
 # ./script_name.sh uninstall  # To uninstall PostgreSQL.
 
 
+add_postgresql_repository() {
+    echo "Adding PostgreSQL official repository..."
+    # Add PostgreSQL's signing key
+    wget -qO - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add - || { echo "Failed to add PostgreSQL key"; exit 1; }
+
+    # Add PostgreSQL Apt repository for your system
+    sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list' || { echo "Failed to add PostgreSQL repository"; exit 1; }
+
+    # Update package list
+    sudo apt-get update || { echo "Failed to update package lists after adding PostgreSQL repository"; exit 1; }
+
+    echo "PostgreSQL repository added successfully."
+}
+
 install_postgresql() {
     echo "Installing PostgreSQL..."
     sudo apt-get update || { echo "Failed to update packages list"; exit 1; }
@@ -16,29 +30,45 @@ install_postgresql() {
     sudo systemctl start postgresql || { echo "Failed to start PostgreSQL"; exit 1; }
     sudo systemctl enable postgresql || { echo "Failed to enable PostgreSQL"; exit 1; }
 
-    echo -e "\033[35mEnter the username for the PostgreSQL superuser:\033[0m"
-    read username
-    echo -e "\033[35mEnter the password for the PostgreSQL superuser:\033[0m"
-    read -s password
-    echo
+    echo -e "\033[35mWould you like to create a new PostgreSQL superuser or use the default 'postgres' superuser? (new/postgres):\033[0m"
+    read user_choice
 
+    if [[ "$user_choice" == "new" ]]; then
+        echo -e "\033[35mEnter the username for the new PostgreSQL superuser:\033[0m"
+        read username
+        echo -e "\033[35mEnter the password for the new PostgreSQL superuser:\033[0m"
+        read -s password
+        echo
 
-    sudo -u postgres sh -c "cd /tmp && psql -c \"CREATE ROLE $username WITH SUPERUSER CREATEDB CREATEROLE LOGIN PASSWORD '$password';\"" || { echo "Failed to create PostgreSQL role"; exit 1; }
+        sudo -u postgres sh -c "cd /tmp && psql -c \"CREATE ROLE $username WITH SUPERUSER CREATEDB CREATEROLE LOGIN PASSWORD '$password';\"" || { echo "Failed to create PostgreSQL role"; exit 1; }
 
+        echo "New superuser '$username' has been created."
+    else
+        echo "Using the default 'postgres' superuser account."
+    fi
 
-    local version_dir=$(ls /etc/postgresql)
-    sudo sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/g" "/etc/postgresql/${version_dir}/main/postgresql.conf" || { echo "Failed to configure PostgreSQL to listen on all IP addresses"; exit 1; }
+    # Get the major version of PostgreSQL
+    pg_version=$(psql -V | awk '{print $3}' | cut -d. -f1)
 
+    # Adjust path based on PostgreSQL version
+    config_path="/etc/postgresql/$pg_version/main/postgresql.conf"
+    hba_path="/etc/postgresql/$pg_version/main/pg_hba.conf"
 
-    echo "host all all 0.0.0.0/0 md5" | sudo tee -a "/etc/postgresql/${version_dir}/main/pg_hba.conf" || { echo "Failed to update pg_hba.conf"; exit 1; }
+    if [[ -f "$config_path" ]]; then
+        sudo sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/g" "$config_path" || { echo "Failed to configure PostgreSQL to listen on all IP addresses"; exit 1; }
+        echo "host all all 0.0.0.0/0 md5" | sudo tee -a "$hba_path" || { echo "Failed to update pg_hba.conf"; exit 1; }
 
-    sudo systemctl restart postgresql || { echo "Failed to restart PostgreSQL"; exit 1; }
-    echo "PostgreSQL installation and configuration complete."
-
+        sudo systemctl restart postgresql || { echo "Failed to restart PostgreSQL"; exit 1; }
+        echo "PostgreSQL installation and configuration complete."
+    else
+        echo "PostgreSQL configuration file not found at $config_path"
+        exit 1
+    fi
 
     echo -e "\033[35mWould you like to install the pgvector extension? (yes/no):\033[0m"
     read install_pgvector
     if [[ "$install_pgvector" == "yes" ]]; then
+        add_postgresql_repository
         install_pgvector
     fi
 }
@@ -46,8 +76,15 @@ install_postgresql() {
 
 install_pgvector() {
     echo "Installing pgvector..."
-    sudo apt-get install -y postgresql-15-pgvector || { echo "Failed to install pgvector"; exit 1; }
+
+    # Install the latest version of pgvector based on the installed PostgreSQL version
+    sudo apt-get install -y postgresql-pgvector || { echo "Failed to install pgvector"; exit 1; }
+
     sudo systemctl restart postgresql || { echo "Failed to restart PostgreSQL after installing pgvector"; exit 1; }
+
+    # Load the extension into the default postgres database
+    sudo -u postgres psql -c "CREATE EXTENSION IF NOT EXISTS vector;" || { echo "Failed to create pgvector extension"; exit 1; }
+
     echo "pgvector installation complete."
 }
 
