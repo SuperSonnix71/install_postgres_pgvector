@@ -7,7 +7,6 @@
 # ./script_name.sh install    # To install PostgreSQL and optionally pgvector.
 # ./script_name.sh uninstall  # To uninstall PostgreSQL.
 
-
 add_postgresql_repository() {
     echo "Adding PostgreSQL official repository..."
     # Add PostgreSQL's signing key
